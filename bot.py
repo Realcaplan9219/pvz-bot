@@ -16,7 +16,7 @@ from telegram.ext import (
 # SOZLAMALAR
 # =========================================================
 
-TOKEN = os.getenv("BOT_TOKEN")
+TOKEN = os.getenv("8931236658:AAHWMUPBqNTQjHRiRM08ZMbk7-jhCfm4cwU")
 EXCEL_FILE = Path("pvz.xlsx")
 
 logging.basicConfig(
