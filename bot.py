@@ -7,7 +7,7 @@ from telegram.ext import Application, MessageHandler, CommandHandler, ContextTyp
 # BOT TOKEN
 # ==========================
 
-TOKEN = os.getenv("8931236658:AAGDKuKbZAqY4802lE8wIdGvRhk7CoG-tIY")
+TOKEN = os.getenv("BOT_TOKEN")
 
 # ==========================
 # ADMIN ID
