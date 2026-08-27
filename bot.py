@@ -3,17 +3,17 @@ import pandas as pd
 from telegram import Update
 from telegram.ext import Application, MessageHandler, CommandHandler, ContextTypes, filters
 
-
 # ==========================
 # BOT TOKEN
 # ==========================
-TOKEN = "YANGI_TOKENINGIZNI_BU_YERGA_QOYING"
 
+TOKEN = os.getenv("BOT_TOKEN")
 
 # ==========================
 # ADMIN ID
 # ==========================
-ADMIN_ID = 123456789   # o'zingizning Telegram ID
+
+ADMIN_ID = 570866674   # o'zingizning Telegram ID
 
 
 # ==========================
@@ -46,12 +46,65 @@ df.columns = ["address", "pvz_name", "latitude", "longitude"]
 # TEXT TOZALASH
 # ==========================
 def normalize(text):
-    return (
-        str(text)
-        .upper()
+    text = str(text).upper().strip()
+
+    replacements = {
+        "А": "A",
+        "Б": "B",
+        "В": "V",
+        "Г": "G",
+        "Д": "D",
+        "Е": "E",
+        "Ё": "E",
+        "Ж": "J",
+        "З": "Z",
+        "И": "I",
+        "Й": "Y",
+        "К": "K",
+        "Л": "L",
+        "М": "M",
+        "Н": "N",
+        "О": "O",
+        "П": "P",
+        "Р": "R",
+        "С": "S",
+        "Т": "T",
+        "У": "U",
+        "Ф": "F",
+        "Х": "X",
+        "Ц": "C",
+        "Ч": "CH",
+        "Ш": "SH",
+        "Щ": "SH",
+        "Ъ": "",
+        "Ы": "Y",
+        "Ь": "",
+        "Э": "E",
+        "Ю": "YU",
+        "Я": "YA"
+    }
+
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+
+    text = (
+        text
         .replace(" ", "")
         .replace("-", "")
+        .replace("_", "")
     )
+
+    return text
+
+
+def normalize_pvz(text):
+    text = normalize(text)
+
+    # FR prefiksini olib tashlaymiz
+    if text.startswith("FR"):
+        text = text[2:]
+
+    return text
 
 
 # ==========================
@@ -170,38 +223,33 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 
-    # ==========================
+        # ==========================
     # PVZ SEARCH
     # ==========================
+
+    search_pvz_text = normalize_pvz(user_text)
 
     result = df[
         df["pvz_name"]
         .astype(str)
-        .str.upper()
-        == user_text.upper()
+        .apply(normalize_pvz) == search_pvz_text
     ]
-
 
     if not result.empty:
 
         row = result.iloc[0]
-
 
         await update.message.reply_text(
             f"PVZ: {row['pvz_name']}\n\n"
             f"Manzil:\n{row['address']}"
         )
 
-
         await update.message.reply_location(
             latitude=float(row["latitude"]),
             longitude=float(row["longitude"])
         )
 
-
         return
-
-
 
     await update.message.reply_text(
         "Ma'lumot topilmadi."
