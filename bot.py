@@ -16,7 +16,10 @@ from telegram.ext import (
 # SOZLAMALAR
 # =========================================================
 
-TOKEN = os.getenv("BOT_TOKEN")
+TOKEN = os.environ.get("BOT_TOKEN")
+
+print("BOT_TOKEN mavjud:", TOKEN is not None)
+print("BOT_TOKEN uzunligi:", len(TOKEN) if TOKEN else 0)
 EXCEL_FILE = Path("pvz.xlsx")
 
 logging.basicConfig(
