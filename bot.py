@@ -181,13 +181,16 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # SEARCH
 # ==========================
 async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message is None:
+        return
 
-    user_id = update.effective_user.id
-    save_user(user_id)
-
+    if update.message.text is None:
+        return
 
     user_text = update.message.text.strip()
-    search_text = normalize(user_text)
+
+    if not user_text:
+        return
 
 
     # ==========================
