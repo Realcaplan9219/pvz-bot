@@ -1,50 +1,36 @@
+import logging
 import os
+from pathlib import Path
+
 import pandas as pd
 from telegram import Update
-from telegram.ext import Application, MessageHandler, CommandHandler, ContextTypes, filters
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    MessageHandler,
+    ContextTypes,
+    filters,
+)
 
-# ==========================
-# BOT TOKEN
-# ==========================
+# =========================================================
+# SOZLAMALAR
+# =========================================================
 
 TOKEN = os.getenv("BOT_TOKEN")
+EXCEL_FILE = Path("pvz.xlsx")
 
-# ==========================
-# ADMIN ID
-# ==========================
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO,
+)
 
-ADMIN_ID = 570866674   # o'zingizning Telegram ID
-
-
-# ==========================
-# USERS DATABASE
-# ==========================
-USERS_FILE = "users.txt"
+logger = logging.getLogger(__name__)
 
 
-def save_user(user_id):
+# =========================================================
+# NORMALIZE
+# =========================================================
 
-    if not os.path.exists(USERS_FILE):
-        open(USERS_FILE, "w").close()
-
-    with open(USERS_FILE, "r") as f:
-        users = f.read().splitlines()
-
-    if str(user_id) not in users:
-        with open(USERS_FILE, "a") as f:
-            f.write(str(user_id) + "\n")
-
-
-# ==========================
-# EXCEL
-# ==========================
-df = pd.read_excel("pvz.xlsx")
-df.columns = ["address", "pvz_name", "latitude", "longitude"]
-
-
-# ==========================
-# TEXT TOZALASH
-# ==========================
 def normalize(text):
     text = str(text).upper().strip()
 
@@ -81,106 +67,93 @@ def normalize(text):
         "Ь": "",
         "Э": "E",
         "Ю": "YU",
-        "Я": "YA"
+        "Я": "YA",
     }
 
     for old, new in replacements.items():
         text = text.replace(old, new)
 
-    text = (
-        text
-        .replace(" ", "")
-        .replace("-", "")
-        .replace("_", "")
-    )
+    # Keraksiz belgilarni bir xil qilish
+    text = text.replace(" ", "")
+    text = text.replace("_", "-")
 
     return text
 
 
-def normalize_pvz(text):
-    text = normalize(text)
+# =========================================================
+# EXCELNI YUKLASH
+# =========================================================
 
-    # FR prefiksini olib tashlaymiz
-    if text.startswith("FR"):
-        text = text[2:]
+def load_excel():
 
-    return text
+    if not EXCEL_FILE.exists():
+        logger.error("pvz.xlsx topilmadi!")
+        return None
 
+    try:
 
-# ==========================
-# START
-# ==========================
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        df = pd.read_excel(EXCEL_FILE)
 
-    user_id = update.effective_user.id
+        df = df.fillna("")
 
-    save_user(user_id)
+        # Ustun nomlarini tozalash
+        df.columns = [
+            str(col).strip()
+            for col in df.columns
+        ]
 
-    await update.message.reply_text(
-        "Bot ishga tushdi."
-    )
-
-
-# ==========================
-# BROADCAST
-# ==========================
-async def send_all(context, text):
-
-    if not os.path.exists(USERS_FILE):
-        return 0
-
-    with open(USERS_FILE, "r") as f:
-        users = f.read().splitlines()
-
-    count = 0
-
-    for user_id in users:
-
-        try:
-            await context.bot.send_message(
-                chat_id=int(user_id),
-                text=text
-            )
-
-            count += 1
-
-        except Exception as e:
-            print(user_id, e)
-
-    return count
-
-
-
-async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    if update.effective_user.id != ADMIN_ID:
-        return
-
-
-    message = " ".join(context.args)
-
-    if not message:
-        await update.message.reply_text(
-            "Xabar matnini yozing.\nMisol:\n/send Bugun texnik ishlar bo'ladi"
+        logger.info(
+            "Excel yuklandi. Qatorlar soni: %s",
+            len(df)
         )
+
+        return df
+
+    except Exception as e:
+
+        logger.exception(
+            "Excelni o'qishda xatolik: %s",
+            e
+        )
+
+        return None
+
+
+# =========================================================
+# START
+# =========================================================
+
+async def start(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
+    if update.message is None:
         return
 
-
-    count = await send_all(
-        context,
-        message
-    )
-
-
     await update.message.reply_text(
-        f"Xabar {count} ta foydalanuvchiga yuborildi."
+        "👋 Salom!\n\n"
+        "PVZ nomini yuboring.\n\n"
+        "Masalan:\n"
+        "АНД-11\n"
+        "БХР-11\n"
+        "FrАНД-21"
     )
 
 
-# ==========================
-# SEARCH
-# ==========================
-async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# =========================================================
+# PVZ QIDIRISH
+# =========================================================
+
+async def search(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
+    # MUHIM!
+    # Ba'zi Telegram update'larda message bo'lmaydi.
+    # Shu sababli bot xato bermasligi uchun tekshiramiz.
+
     if update.message is None:
         return
 
@@ -190,114 +163,220 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text.strip()
 
     if not user_text:
+        await update.message.reply_text(
+            "❗ PVZ nomini yuboring."
+        )
         return
 
+    logger.info(
+        "Qidiruv: %s",
+        user_text
+    )
 
-    # ==========================
-    # QR SEARCH
-    # ==========================
+    # =====================================================
+    # EXCEL
+    # =====================================================
 
-    qr_folders = ["qr1", "qr2", "qr3"]
+    df = load_excel()
 
-
-    for qr_folder in qr_folders:
-
-        if not os.path.isdir(qr_folder):
-            continue
-
-
-        for file in os.listdir(qr_folder):
-
-            if file.lower().endswith(".png"):
-
-                file_name = os.path.splitext(file)[0]
-
-
-                if normalize(file_name) == search_text:
-
-                    with open(os.path.join(qr_folder, file), "rb") as photo:
-
-                        await update.message.reply_photo(
-                            photo=photo,
-                            caption=f"Mashina: {file_name}"
-                        )
-
-                    return
-
-
-
-        # ==========================
-    # PVZ SEARCH
-    # ==========================
-
-    search_pvz_text = normalize_pvz(user_text)
-
-    result = df[
-        df["pvz_name"]
-        .astype(str)
-        .apply(normalize_pvz) == search_pvz_text
-    ]
-
-    if not result.empty:
-
-        row = result.iloc[0]
+    if df is None:
 
         await update.message.reply_text(
-            f"PVZ: {row['pvz_name']}\n\n"
-            f"Manzil:\n{row['address']}"
-        )
-
-        await update.message.reply_location(
-            latitude=float(row["latitude"]),
-            longitude=float(row["longitude"])
+            "❌ pvz.xlsx faylini o'qib bo'lmadi."
         )
 
         return
 
+    if df.empty:
+
+        await update.message.reply_text(
+            "❌ Excel faylida ma'lumot yo'q."
+        )
+
+        return
+
+    # =====================================================
+    # NORMALIZE USER INPUT
+    # =====================================================
+
+    search_text = normalize(user_text)
+
+    logger.info(
+        "Normalize qilingan qidiruv: %s",
+        search_text
+    )
+
+    # =====================================================
+    # QIDIRISH
+    # =====================================================
+
+    results = []
+
+    for _, row in df.iterrows():
+
+        found = False
+
+        for value in row.values:
+
+            if value is None:
+                continue
+
+            value_text = str(value).strip()
+
+            if not value_text:
+                continue
+
+            normalized_value = normalize(value_text)
+
+            if search_text in normalized_value:
+
+                found = True
+                break
+
+        if found:
+            results.append(row)
+
+    # =====================================================
+    # TOPILMADI
+    # =====================================================
+
+    if not results:
+
+        await update.message.reply_text(
+            f"❌ «{user_text}» bo'yicha PVZ topilmadi."
+        )
+
+        return
+
+    # =====================================================
+    # NATIJANI TAYYORLASH
+    # =====================================================
+
+    messages = []
+
+    for row in results[:10]:
+
+        lines = []
+
+        for column in df.columns:
+
+            value = str(row[column]).strip()
+
+            if not value:
+                continue
+
+            if value.lower() == "nan":
+                continue
+
+            lines.append(
+                f"<b>{column}:</b> {value}"
+            )
+
+        if lines:
+
+            messages.append(
+                "\n".join(lines)
+            )
+
+    # =====================================================
+    # NATIJA
+    # =====================================================
+
+    if not messages:
+
+        await update.message.reply_text(
+            "❌ PVZ topildi, lekin ma'lumotni chiqarib bo'lmadi."
+        )
+
+        return
+
+    result_text = (
+        "\n\n"
+        "━━━━━━━━━━━━━━━━"
+        "\n\n"
+    ).join(messages)
+
+    # Telegram maksimal xabar hajmi
+    if len(result_text) > 4000:
+
+        result_text = (
+            result_text[:3900]
+            + "\n\n..."
+        )
+
     await update.message.reply_text(
-        "Ma'lumot topilmadi."
+        result_text,
+        parse_mode="HTML"
     )
 
 
-# ==========================
+# =========================================================
+# ERROR HANDLER
+# =========================================================
+
+async def error_handler(
+    update: object,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
+    logger.error(
+        "Telegram update'da xatolik:",
+        exc_info=context.error
+    )
+
+
+# =========================================================
 # MAIN
-# ==========================
+# =========================================================
 
 def main():
 
-    app = Application.builder().token(TOKEN).build()
+    if not TOKEN:
 
+        raise ValueError(
+            "BOT_TOKEN topilmadi! "
+            "Railway Variables bo'limiga BOT_TOKEN qo'shing."
+        )
 
-    app.add_handler(
+    application = (
+        Application.builder()
+        .token(TOKEN)
+        .build()
+    )
+
+    # /start
+    application.add_handler(
         CommandHandler(
             "start",
             start
         )
     )
 
-
-    app.add_handler(
-        CommandHandler(
-            "send",
-            broadcast
-        )
-    )
-
-
-    app.add_handler(
+    # Faqat text xabarlarni search ga yuboramiz
+    application.add_handler(
         MessageHandler(
             filters.TEXT & ~filters.COMMAND,
             search
         )
     )
 
+    # Error handler
+    application.add_error_handler(
+        error_handler
+    )
 
-    print("Bot ishga tushdi...")
+    logger.info(
+        "BOT ISHGA TUSHDI"
+    )
+
+    application.run_polling(
+        allowed_updates=Update.ALL_TYPES
+    )
 
 
-    app.run_polling()
-
-
+# =========================================================
+# START BOT
+# =========================================================
 
 if __name__ == "__main__":
     main()
