@@ -13,7 +13,6 @@ from telegram.ext import (
 
 # =========================================================
 # TOKEN
-# Railway -> Variables -> BOT_TOKEN
 # =========================================================
 
 TOKEN = os.getenv("BOT_TOKEN")
@@ -30,32 +29,74 @@ EXCEL_FILE = "pvz.xlsx"
 
 df = pd.read_excel(EXCEL_FILE)
 
+# Excel ustun nomlarini tozalash
+df.columns = [
+    str(col).strip()
+    for col in df.columns
+]
 
-# Excel ustunlarini avtomatik aniqlash
-def find_column(possible_names):
-    for col in df.columns:
-        col_clean = str(col).strip().lower()
 
-        for name in possible_names:
-            if name in col_clean:
-                return col
+print("Excel ustunlari:")
+print(list(df.columns))
+
+
+# =========================================================
+# USTUNNI TOPISH
+# =========================================================
+
+def find_column(keywords):
+
+    for column in df.columns:
+
+        column_name = str(column).strip().lower()
+
+        for keyword in keywords:
+
+            if keyword.lower() in column_name:
+                return column
 
     return None
 
 
+# PVZ nomi
 PVZ_COLUMN = find_column([
     "pvz nomi",
+    "pvz_nomi",
+    "pvz name",
     "pvz_name",
-    "pvz",
-    "название пвз"
+    "название пвз",
+    "пвз",
 ])
 
+
+# Manzil
 ADDRESS_COLUMN = find_column([
     "manzil",
     "address",
-    "адрес"
+    "адрес",
 ])
 
+
+# Telefon
+PHONE_COLUMN = find_column([
+    "telefon",
+    "phone",
+    "телефон",
+    "tel",
+])
+
+
+# Telegram
+TELEGRAM_COLUMN = find_column([
+    "telegram",
+    "telegram user",
+    "telegram username",
+    "telegram_user",
+    "telegram username",
+])
+
+
+# Bitta ustundagi koordinata
 COORDINATE_COLUMN = find_column([
     "latitude, longitude",
     "latitude longitude",
@@ -64,48 +105,52 @@ COORDINATE_COLUMN = find_column([
     "koordinata",
     "координаты",
     "lat long",
-    "lat, long"
-])
-
-PHONE_COLUMN = find_column([
-    "telefon",
-    "phone",
-    "телефон"
-])
-
-TELEGRAM_COLUMN = find_column([
-    "telegram",
-    "telegram user",
-    "telegram username",
-    "telegram_user",
-    "телеграм"
+    "lat, long",
 ])
 
 
-# Agar koordinata ikkita alohida ustunda bo'lsa
+# Alohida latitude
 LATITUDE_COLUMN = find_column([
     "latitude",
-    "широта"
+    "широта",
 ])
 
+
+# Alohida longitude
 LONGITUDE_COLUMN = find_column([
     "longitude",
-    "долгота"
+    "долгота",
 ])
 
 
+# =========================================================
+# TEKSHIRISH
+# =========================================================
+
 if PVZ_COLUMN is None:
+
+    # Agar PVZ ustuni topilmasa, ustunlarni ko'rsatadi
     raise RuntimeError(
-        "Excel'da PVZ nomi ustuni topilmadi!"
+        "PVZ ustuni topilmadi!\n"
+        f"Excel ustunlari: {list(df.columns)}"
     )
+
+
+print("PVZ_COLUMN =", PVZ_COLUMN)
+print("ADDRESS_COLUMN =", ADDRESS_COLUMN)
+print("PHONE_COLUMN =", PHONE_COLUMN)
+print("TELEGRAM_COLUMN =", TELEGRAM_COLUMN)
+print("COORDINATE_COLUMN =", COORDINATE_COLUMN)
+print("LATITUDE_COLUMN =", LATITUDE_COLUMN)
+print("LONGITUDE_COLUMN =", LONGITUDE_COLUMN)
 
 
 # =========================================================
 # KIRILL -> LOTIN
-# LOTIN -> KIRILL bilan bir xil qidirish uchun
 # =========================================================
 
 CYRILLIC_TO_LATIN = {
+
     "А": "A",
     "Б": "B",
     "В": "V",
@@ -152,155 +197,68 @@ CYRILLIC_TO_LATIN = {
 }
 
 
+# =========================================================
+# NORMALIZE
+# =========================================================
+
 def normalize(text):
-    """
-    PVZ nomini qidiruv uchun standart ko'rinishga keltiradi.
-
-    Misollar:
-
-    FrТАШ-417 -> TASH417
-    tash417   -> TASH417
-    таш417    -> TASH417
-    ТАШ-417   -> TASH417
-    frtash417 -> TASH417
-    """
 
     if text is None:
         return ""
 
     text = str(text).upper().strip()
 
-    # Kirill harflarini lotinga o'tkazish
     result = ""
 
     for char in text:
+
         if char in CYRILLIC_TO_LATIN:
             result += CYRILLIC_TO_LATIN[char]
+
         else:
             result += char
 
     text = result
 
-    # FR prefiksini olib tashlash
+    # FR ni olib tashlash
     if text.startswith("FR"):
         text = text[2:]
 
-    # Faqat harf va raqamlarni qoldirish
-    text = re.sub(r"[^A-Z0-9]", "", text)
+    # Faqat harf va raqamlar
+    text = re.sub(
+        r"[^A-Z0-9]",
+        "",
+        text
+    )
 
     return text
 
 
 # =========================================================
-# COORDINATE
+# VALUE
 # =========================================================
 
-def get_coordinates(row):
-    """
-    Koordinatalar:
-
-    1) Bitta ustunda:
-       41.311081, 69.240562
-
-    yoki
-
-       41.311081 69.240562
-
-    yoki
-
-       41.311081;69.240562
-
-    2) Alohida ustunlarda:
-       Latitude
-       Longitude
-    """
-
-    # Avval alohida Latitude / Longitude
-    if LATITUDE_COLUMN and LONGITUDE_COLUMN:
-
-        try:
-            lat = float(str(row[LATITUDE_COLUMN]).replace(",", "."))
-            lon = float(str(row[LONGITUDE_COLUMN]).replace(",", "."))
-
-            return lat, lon
-
-        except (ValueError, TypeError):
-            pass
-
-    # Bitta koordinata ustuni
-    if COORDINATE_COLUMN:
-
-        value = str(row[COORDINATE_COLUMN]).strip()
-
-        # Vergul, nuqtali vergul yoki bo'sh joy orqali
-        numbers = re.findall(
-            r"-?\d+(?:[.,]\d+)?",
-            value
-        )
-
-        if len(numbers) >= 2:
-
-            try:
-                lat = float(numbers[0].replace(",", "."))
-                lon = float(numbers[1].replace(",", "."))
-
-                return lat, lon
-
-            except ValueError:
-                pass
-
-    return None, None
-
-
-# =========================================================
-# PVZ QIDIRISH
-# =========================================================
-
-def search_rows(user_text):
-
-    search_value = normalize(user_text)
-
-    if not search_value:
-        return pd.DataFrame()
-
-    normalized_names = df[PVZ_COLUMN].apply(normalize)
-
-    # 1. Avval aniq match
-    exact = df[
-        normalized_names == search_value
-    ]
-
-    if not exact.empty:
-        return exact
-
-    # 2. Agar aniq topilmasa, qisman qidirish
-    partial = df[
-        normalized_names.str.contains(
-            search_value,
-            na=False
-        )
-    ]
-
-    return partial
-
-
-# =========================================================
-# PVZ HAQIDA MA'LUMOT
-# =========================================================
-
-def get_value(row, column, default="Ma'lumot mavjud emas"):
+def get_value(
+    row,
+    column,
+    default="Ma'lumot mavjud emas"
+):
 
     if column is None:
         return default
 
-    value = row.get(column)
+    try:
+        value = row[column]
+
+    except Exception:
+        return default
 
     if pd.isna(value):
         return default
 
     value = str(value).strip()
 
-    if not value:
+    if not value or value.lower() == "nan":
         return default
 
     return value
@@ -320,7 +278,6 @@ def format_telegram(value):
     if not value or value.lower() == "nan":
         return "Ma'lumot mavjud emas"
 
-    # Agar @ yozilmagan bo'lsa
     if not value.startswith("@"):
         value = "@" + value
 
@@ -328,7 +285,132 @@ def format_telegram(value):
 
 
 # =========================================================
-# PVZ QIDIRUV HANDLER
+# KOORDINATA
+# =========================================================
+
+def get_coordinates(row):
+
+    # -----------------------------------------------------
+    # 1. Alohida Latitude / Longitude
+    # -----------------------------------------------------
+
+    if (
+        LATITUDE_COLUMN is not None
+        and
+        LONGITUDE_COLUMN is not None
+    ):
+
+        try:
+
+            lat_text = str(
+                row[LATITUDE_COLUMN]
+            ).replace(",", ".")
+
+            lon_text = str(
+                row[LONGITUDE_COLUMN]
+            ).replace(",", ".")
+
+            lat = float(lat_text)
+            lon = float(lon_text)
+
+            return lat, lon
+
+        except Exception:
+            pass
+
+
+    # -----------------------------------------------------
+    # 2. Bitta ustunda koordinata
+    # -----------------------------------------------------
+
+    if COORDINATE_COLUMN is not None:
+
+        value = str(
+            row[COORDINATE_COLUMN]
+        ).strip()
+
+        # Masalan:
+        # 41.311081, 69.240562
+        #
+        # yoki:
+        # 41.311081 69.240562
+        #
+        # yoki:
+        # 41.311081;69.240562
+
+        numbers = re.findall(
+            r"-?\d+(?:[.,]\d+)?",
+            value
+        )
+
+        if len(numbers) >= 2:
+
+            try:
+
+                latitude = float(
+                    numbers[0].replace(",", ".")
+                )
+
+                longitude = float(
+                    numbers[1].replace(",", ".")
+                )
+
+                return latitude, longitude
+
+            except Exception:
+                pass
+
+
+    return None, None
+
+
+# =========================================================
+# PVZ QIDIRISH
+# =========================================================
+
+def search_pvz_rows(user_text):
+
+    search_value = normalize(
+        user_text
+    )
+
+    if not search_value:
+        return pd.DataFrame()
+
+    normalized_names = df[
+        PVZ_COLUMN
+    ].fillna("").apply(normalize)
+
+
+    # -----------------------------------------------------
+    # 1. ANIQ MATCH
+    # -----------------------------------------------------
+
+    exact = df[
+        normalized_names == search_value
+    ]
+
+    if not exact.empty:
+        return exact
+
+
+    # -----------------------------------------------------
+    # 2. QISMAN MATCH
+    # -----------------------------------------------------
+
+    partial = df[
+        normalized_names.str.contains(
+            search_value,
+            na=False,
+            regex=False
+        )
+    ]
+
+    return partial
+
+
+# =========================================================
+# SEARCH HANDLER
 # =========================================================
 
 async def search_pvz(
@@ -339,57 +421,72 @@ async def search_pvz(
     if not update.message:
         return
 
-    user_text = update.message.text.strip()
+    if not update.message.text:
+        return
+
+    user_text = (
+        update.message.text
+        .strip()
+    )
 
     if not user_text:
         return
 
-    results = search_rows(user_text)
 
-    # -----------------------------------------------------
+    results = search_pvz_rows(
+        user_text
+    )
+
+
+    # =====================================================
     # TOPILMADI
-    # -----------------------------------------------------
+    # =====================================================
 
     if results.empty:
 
         await update.message.reply_text(
             "❌ PVZ topilmadi.\n\n"
-            f"Qidirilgan: {user_text}"
+            f"Qidiruv: {user_text}"
         )
 
         return
 
-    # -----------------------------------------------------
-    # BIR NECHTA PVZ
-    # -----------------------------------------------------
+
+    # =====================================================
+    # BIR NECHTA NATIJA
+    # =====================================================
 
     if len(results) > 1:
 
-        names = []
+        text = "🔎 Bir nechta PVZ topildi:\n\n"
 
         for _, row in results.head(10).iterrows():
 
             name = get_value(
                 row,
                 PVZ_COLUMN,
-                "Noma'lum PVZ"
+                "Noma'lum"
             )
 
-            names.append(f"• {name}")
+            text += f"• {name}\n"
+
+        text += (
+            "\nIltimos, aniqroq PVZ nomini yozing."
+        )
 
         await update.message.reply_text(
-            "🔎 Bir nechta PVZ topildi:\n\n"
-            + "\n".join(names)
-            + "\n\nAniqroq PVZ nomini yozing."
+            text
         )
 
         return
 
-    # -----------------------------------------------------
-    # BIRTA PVZ
-    # -----------------------------------------------------
+
+    # =====================================================
+    # BITTA PVZ
+    # =====================================================
 
     row = results.iloc[0]
+
 
     pvz_name = get_value(
         row,
@@ -406,7 +503,7 @@ async def search_pvz(
         PHONE_COLUMN
     )
 
-    telegram_user = format_telegram(
+    telegram = format_telegram(
         get_value(
             row,
             TELEGRAM_COLUMN,
@@ -414,26 +511,41 @@ async def search_pvz(
         )
     )
 
-    # -----------------------------------------------------
-    # MATN
-    # -----------------------------------------------------
+
+    # =====================================================
+    # MA'LUMOT
+    # =====================================================
 
     message = (
         f"📍 PVZ: {pvz_name}\n\n"
-        f"🏠 Manzil:\n{address}\n\n"
-        f"📞 Telefon:\n{phone}\n\n"
-        f"💬 Telegram:\n{telegram_user}"
+        f"🏠 Manzil:\n"
+        f"{address}\n\n"
+        f"📞 Telefon:\n"
+        f"{phone}\n\n"
+        f"💬 Telegram:\n"
+        f"{telegram}"
     )
 
-    await update.message.reply_text(message)
 
-    # -----------------------------------------------------
+    await update.message.reply_text(
+        message
+    )
+
+
+    # =====================================================
     # LOCATION
-    # -----------------------------------------------------
+    # =====================================================
 
-    latitude, longitude = get_coordinates(row)
+    latitude, longitude = get_coordinates(
+        row
+    )
 
-    if latitude is not None and longitude is not None:
+
+    if (
+        latitude is not None
+        and
+        longitude is not None
+    ):
 
         try:
 
@@ -442,16 +554,18 @@ async def search_pvz(
                 longitude=longitude
             )
 
-        except Exception as e:
+        except Exception as error:
 
             print(
-                f"Lokatsiya yuborishda xato: {e}"
+                "Location yuborishda xato:",
+                error
             )
 
     else:
 
         await update.message.reply_text(
-            "⚠️ Ushbu PVZ uchun koordinata topilmadi."
+            "⚠️ Ushbu PVZ uchun "
+            "lokatsiya topilmadi."
         )
 
 
@@ -476,5 +590,6 @@ app.add_handler(
 
 
 print("Bot ishga tushdi...")
+
 
 app.run_polling()
