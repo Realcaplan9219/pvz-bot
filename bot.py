@@ -261,7 +261,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "👋 Assalomu alaykum!\n\n"
         "📍 PVZ ma'lumotlarini topish uchun "
-        "PVZ nomi yoki kodini yuboring.\n\n"
+        "PVZ nomini yuboring.\n\n"
         "Masalan:\n"
         "TASH417"
     )
@@ -326,7 +326,7 @@ async def search_pvz(
             text += f"• {name}\n"
 
         text += (
-            "\nAniqroq PVZ nomi yoki kodini yozing."
+            "\nPVZ nomini aniqroq yozing."
         )
 
         await update.message.reply_text(text)
